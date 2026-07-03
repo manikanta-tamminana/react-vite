@@ -1,7 +1,7 @@
 import React from 'react';
 import { Send, RotateCcw, Upload, FileText, X } from 'lucide-react';
 
-export default function TrainingForm({ formData, onChange, onSubmit, onReset, loading}) {
+export default function TrainingForm({ formData, onChange, onSubmit, onReset, loading, lockIdentity }) {
   const departments = [
     'Finance Department',
     'Agriculture',
@@ -26,10 +26,12 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
   ];
 
   const types = ['Induction', 'Refresher', 'Specialization', 'Technical'];
+  // value = what the backend's Status enum / @Pattern accepts, label = what the user sees
   const statuses = [
-  { label: "In Progress", value: "IN_PROGRESS" },
-  { label: "Completed", value: "COMPLETED" }
-];
+    { value: 'IN_PROGRESS', label: 'In Progress' },
+    { value: 'COMPLETED', label: 'Completed' },
+  ];
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit();
@@ -61,9 +63,18 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
               value={formData.employeeName}
               onChange={onChange}
               required
+              disabled={lockIdentity}
+              readOnly={lockIdentity}
               placeholder="e.g. Bikas Mallik"
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+              className={`border border-gov-border rounded-[4px] text-text-primary text-sm px-3 py-2 focus:outline-none transition-all ${
+                lockIdentity
+                  ? 'bg-gov-bg/60 cursor-not-allowed text-text-secondary'
+                  : 'bg-gov-bg/30 focus:bg-white focus:border-primary-blue focus:ring-1 focus:ring-primary-blue'
+              }`}
             />
+            {lockIdentity && (
+              <p className="text-[10px] text-text-secondary">Locked to your logged-in account.</p>
+            )}
           </div>
 
           {/* Employee ID */}
@@ -78,9 +89,18 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
               value={formData.employeeId}
               onChange={onChange}
               required
+              disabled={lockIdentity}
+              readOnly={lockIdentity}
               placeholder="e.g. TE-030316"
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+              className={`border border-gov-border rounded-[4px] text-text-primary text-sm px-3 py-2 focus:outline-none transition-all ${
+                lockIdentity
+                  ? 'bg-gov-bg/60 cursor-not-allowed text-text-secondary'
+                  : 'bg-gov-bg/30 focus:bg-white focus:border-primary-blue focus:ring-1 focus:ring-primary-blue'
+              }`}
             />
+            {lockIdentity && (
+              <p className="text-[10px] text-text-secondary">Locked to your logged-in account.</p>
+            )}
           </div>
 
           {/* Department */}
@@ -149,23 +169,18 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
               Status <span className="text-red-500">*</span>
             </label>
             <select
-  id="status"
-  name="status"
-  value={formData.status}
-  onChange={onChange}
-  required
->
-  <option value="">Select Status</option>
-
-  {statuses.map((status) => (
-    <option
-      key={status.value}
-      value={status.value}
-    >
-      {status.label}
-    </option>
-  ))}
-</select>
+              id="status"
+              name="status"
+              value={formData.status}
+              onChange={onChange}
+              required
+              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+            >
+              <option value="">Select Status</option>
+              {statuses.map((status) => (
+                <option key={status.value} value={status.value}>{status.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Issue Date */}

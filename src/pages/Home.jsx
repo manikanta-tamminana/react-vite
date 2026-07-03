@@ -6,12 +6,15 @@ import TrainingCards from '../components/TrainingCards';
 import FaqAccordion from '../components/FaqAccordion';
 import Footer from '../components/Footer';
 import BackToTop from '../components/BackToTop';
-import mockRecords from '../data/trainingData.json';
 import {
   fetchAllRecords,
   fetchEmployeeRecords,
   saveTrainingRecord,
   loginUser,
+  registerUser,
+  fetchPendingEmployees,
+  approveEmployee,
+  rejectEmployee,
   provisionUser,
   getAuthUser,
   clearAuthData,
@@ -35,6 +38,19 @@ const emptyForm = {
   remarks: ''
 };
 
+// Kept in sync with TrainingForm.jsx's department list.
+const DEPARTMENTS = [
+  'Finance Department',
+  'Agriculture',
+  'Agriculture (Horticulture)',
+  'Information Technology',
+  'PWD (Public Works Department)',
+  'Health & Family Welfare',
+  'School Education',
+  'Treasury Department',
+  'Panchayats'
+];
+
 export default function Home() {
   const initialUser = getAuthUser();
   const [currentUser, setCurrentUser] = useState(initialUser);
@@ -50,6 +66,19 @@ export default function Home() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Self-registration modal state
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [registerData, setRegisterData] = useState({ employeeId: '', employeeName: '', department: '', password: '' });
+  const [registerError, setRegisterError] = useState('');
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState('');
+  const [registerLoading, setRegisterLoading] = useState(false);
+
+  // Admin: pending self-registrations awaiting approval
+  const [pendingEmployees, setPendingEmployees] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingRoleChoice, setPendingRoleChoice] = useState({}); // { [employeeId]: 'USER' | 'ADMIN' }
+
   // Provisioning state
   const [provisionData, setProvisionData] = useState({ employeeId: '', password: '', role: 'USER' });
   const [provLoading, setProvLoading] = useState(false);
@@ -58,14 +87,46 @@ export default function Home() {
   const formRef = useRef(null);
   const recordsRef = useRef(null);
 
+  // Keep the portal-view toggle in sync whenever auth state changes,
+  // instead of manually setting it in every login/logout handler.
+  useEffect(() => {
+    setRole(currentUser && currentUser.role === 'ADMIN' ? 'admin' : 'user');
+  }, [currentUser]);
+
+  // For non-admin users, the Employee ID/Name fields are locked to their own
+  // identity (the backend now rejects submissions under someone else's ID),
+  // so keep the form pre-filled and in sync whenever the logged-in user changes.
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'ADMIN') {
+      setFormData((prev) => ({
+        ...prev,
+        employeeId: currentUser.employeeId,
+        employeeName: currentUser.employeeName,
+      }));
+    }
+  }, [currentUser]);
+
+  // Load pending self-registrations whenever an admin is viewing the admin portal.
+  useEffect(() => {
+    const loadPending = async () => {
+      if (!currentUser || currentUser.role !== 'ADMIN' || role !== 'admin') return;
+      setPendingLoading(true);
+      try {
+        const data = await fetchPendingEmployees();
+        setPendingEmployees(data);
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          setCurrentUser(null);
+        }
+        // Non-fatal otherwise — the admin panel just shows an empty pending list.
+      } finally {
+        setPendingLoading(false);
+      }
+    };
+    loadPending();
+  }, [currentUser, role]);
+
   // Initialize records from localStorage or JSON file
-  
-  function triggerNotification(type, message) {
-    setNotification({ type, message });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4500);
-  };
   useEffect(() => {
     const loadRecords = async () => {
       if (!currentUser) {
@@ -79,29 +140,27 @@ export default function Home() {
         } else {
           data = await fetchEmployeeRecords(currentUser.employeeId);
         }
-        console.log("Before setRecords");
-setRecords(data);
-console.log("After setRecords");
-console.log("Records loaded:", data);
+        setRecords(data);
       } catch (error) {
-  console.error("===== LOAD RECORDS ERROR =====");
-  console.error(error);
-  console.error(error.response);
-  console.error(error.response?.status);
-  console.error(error.response?.data);
-  console.error(error.message);
-
-  triggerNotification(
-    "error",
-    "Unable to load training records"
-  );
-}
+        if (error.status === 401 || error.status === 403) {
+          setCurrentUser(null);
+          triggerNotification("error", "Your session has expired. Please log in again.");
+        } else {
+          triggerNotification("error", "Unable to load training records");
+        }
+      }
     };
 
     loadRecords();
   }, [currentUser, role]);
 
 
+  const triggerNotification = (type, message) => {
+    setNotification({ type, message });
+    setTimeout(() => {
+      setNotification(null);
+    }, 4500);
+  };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -111,60 +170,46 @@ console.log("Records loaded:", data);
     }));
   };
 
+  const resetFormPreservingIdentity = () => {
+    if (currentUser && currentUser.role !== 'ADMIN') {
+      setFormData({ ...emptyForm, employeeId: currentUser.employeeId, employeeName: currentUser.employeeName });
+    } else {
+      setFormData(emptyForm);
+    }
+  };
+
   const handleFormReset = () => {
-    setFormData(emptyForm);
+    resetFormPreservingIdentity();
     triggerNotification('info', 'Form input fields cleared.');
   };
 
   const handleFormSubmit = async () => {
+    if (!currentUser) {
+      triggerNotification("error", "Please log in before submitting a training record.");
+      setLoginModalOpen(true);
+      return;
+    }
     try {
       setLoading(true);
 
-      try {
-        await saveTrainingRecord(formData);
+      await saveTrainingRecord(formData);
 
-        if (currentUser) {
-          let latestRecords;
-          if (currentUser.role === 'ADMIN') {
-            latestRecords = await fetchAllRecords();
-          } else {
-            latestRecords = await fetchEmployeeRecords(currentUser.employeeId);
-          }
-          setRecords(latestRecords);
-        }
-
-        triggerNotification(
-          "success",
-          "Training record saved successfully"
-        );
-      } catch (backendError) {
-        // Fallback for offline preview/mock mode
-        console.warn("Backend is offline, saving locally for preview", backendError);
-        const newRecord = {
-          recordId: Date.now(),
-          employeeName: formData.employeeName,
-          employeeId: formData.employeeId,
-          department: formData.department,
-          status: formData.status,
-          issueDate: formData.issueDate,
-          instructorName: formData.instructor,
-          certificateNumber: formData.certificateNumber,
-          remarks: formData.remarks,
-          certificateFile: formData.certificateFile instanceof File ? formData.certificateFile.name : formData.certificateFile
-        };
-        setRecords([newRecord, ...records]);
-        triggerNotification(
-          "success",
-          "Training record saved successfully (Preview Mode - Database Offline)"
-        );
+      if (currentUser) {
+        const latestRecords = currentUser.role === 'ADMIN'
+          ? await fetchAllRecords()
+          : await fetchEmployeeRecords(currentUser.employeeId);
+        setRecords(latestRecords);
       }
 
-      setFormData(emptyForm);
+      triggerNotification("success", "Training record saved successfully");
+      resetFormPreservingIdentity();
     } catch (error) {
-      triggerNotification(
-        "error",
-        error.message || "Failed to save training record"
-      );
+      if (error.status === 401 || error.status === 403) {
+        setCurrentUser(null);
+        triggerNotification("error", "Your session has expired. Please log in again.");
+      } else {
+        triggerNotification("error", error.message || "Failed to save training record");
+      }
     } finally {
       setLoading(false);
     }
@@ -176,47 +221,66 @@ console.log("Records loaded:", data);
     try {
       const data = await loginUser(loginData.employeeId, loginData.password);
       setCurrentUser(data);
-      setRole(data.role.toLowerCase());
       setLoginModalOpen(false);
       setLoginData({ employeeId: '', password: '' });
       triggerNotification('success', `Welcome back, ${data.employeeName}!`);
     } catch (err) {
-      // Fallback for offline preview/mock mode
-      if (loginData.employeeId === 'EMP001' && loginData.password === 'password123') {
-        const mockAdmin = {
-          employeeId: 'EMP001',
-          employeeName: 'Mock Test Admin',
-          role: 'ADMIN'
-        };
-        setCurrentUser(mockAdmin);
-        setRole('admin');
-        setLoginModalOpen(false);
-        setLoginData({ employeeId: '', password: '' });
-        setRecords(mockRecords.map((r, idx) => ({ ...r, recordId: idx + 1 })));
-        triggerNotification('success', 'Logged in using Mock Admin Session (Database offline).');
-      } else if (loginData.employeeId === 'TE-030316' && loginData.password === 'password') {
-        const mockUser = {
-          employeeId: 'TE-030316',
-          employeeName: 'Bikas Mallik',
-          role: 'USER'
-        };
-        setCurrentUser(mockUser);
-        setRole('user');
-        setLoginModalOpen(false);
-        setLoginData({ employeeId: '', password: '' });
-        setRecords(mockRecords.map((r, idx) => ({ ...r, recordId: idx + 1 })));
-        triggerNotification('success', 'Logged in using Mock Employee Session (Database offline).');
-      } else {
-        setLoginError(err.message || 'Login failed. Check your credentials.');
-      }
+      // Login is intentionally generic about *why* it failed (wrong password vs.
+      // account still pending vs. rejected all return the same 401), so we add
+      // a soft hint here rather than the backend leaking account state.
+      setLoginError(
+        (err.message || 'Login failed. Check your credentials.') +
+        ' If you recently registered, your account may still be awaiting admin approval.'
+      );
     }
   };
 
   const handleLogout = () => {
     clearAuthData();
     setCurrentUser(null);
-    setRole('user');
     triggerNotification('info', 'Logged out successfully.');
+  };
+
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    setRegisterError('');
+    setRegisterSuccess('');
+    setRegisterLoading(true);
+    try {
+      const message = await registerUser(
+        registerData.employeeId,
+        registerData.employeeName,
+        registerData.department,
+        registerData.password
+      );
+      setRegisterSuccess(message || 'Registration submitted. An administrator will review your account.');
+      setRegisterData({ employeeId: '', employeeName: '', department: '', password: '' });
+    } catch (err) {
+      setRegisterError(err.message || 'Registration failed.');
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
+
+  const handleApprove = async (employeeId) => {
+    const chosenRole = pendingRoleChoice[employeeId] || 'USER';
+    try {
+      await approveEmployee(employeeId, chosenRole);
+      setPendingEmployees((prev) => prev.filter((p) => p.employeeId !== employeeId));
+      triggerNotification('success', `Approved ${employeeId} as ${chosenRole}`);
+    } catch (err) {
+      triggerNotification('error', err.message || 'Failed to approve employee.');
+    }
+  };
+
+  const handleReject = async (employeeId) => {
+    try {
+      await rejectEmployee(employeeId);
+      setPendingEmployees((prev) => prev.filter((p) => p.employeeId !== employeeId));
+      triggerNotification('info', `Rejected ${employeeId}`);
+    } catch (err) {
+      triggerNotification('error', err.message || 'Failed to reject employee.');
+    }
   };
 
   const handleProvisionSubmit = async (e) => {
@@ -361,8 +425,77 @@ console.log("Records loaded:", data);
           </div>
         </div>
 
+        {/* Section: Pending Self-Registrations (Admin) */}
+        {role === 'admin' && currentUser && (
+          <div className="bg-white border border-gov-border rounded-[4px] shadow-xs p-6 animate-fade-up">
+            <div className="border-b border-gov-border pb-3 mb-4">
+              <h2 className="text-md font-extrabold text-primary-blue flex items-center gap-2">
+                <span className="w-1.5 h-5 bg-accent-orange inline-block rounded-sm"></span>
+                Pending Registrations
+                {pendingEmployees.length > 0 && (
+                  <span className="bg-accent-orange text-[#1a1a2e] text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                    {pendingEmployees.length}
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Employees who self-registered and are awaiting a role assignment before they can log in.
+              </p>
+            </div>
+
+            {pendingLoading ? (
+              <p className="text-xs text-text-secondary">Loading pending registrations...</p>
+            ) : pendingEmployees.length === 0 ? (
+              <p className="text-xs text-text-secondary italic">No registrations awaiting approval.</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingEmployees.map((p) => (
+                  <div
+                    key={p.employeeId}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-gov-border rounded-[4px] p-3 bg-gov-bg/20"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-primary-blue truncate">{p.employeeName}</p>
+                      <p className="text-xs text-text-secondary">
+                        ID: <span className="font-mono">{p.employeeId}</span>
+                        {p.department && <> &middot; {p.department}</>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select
+                        value={pendingRoleChoice[p.employeeId] || 'USER'}
+                        onChange={(e) =>
+                          setPendingRoleChoice({ ...pendingRoleChoice, [p.employeeId]: e.target.value })
+                        }
+                        className="border border-gov-border rounded-[4px] bg-white text-text-primary text-xs px-2 py-2 focus:outline-none focus:border-primary-blue"
+                      >
+                        <option value="USER">USER</option>
+                        <option value="ADMIN">ADMIN</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(p.employeeId)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider py-2 px-3 rounded-[4px] transition-colors cursor-pointer"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReject(p.employeeId)}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider py-2 px-3 rounded-[4px] transition-colors cursor-pointer"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Section: User Provisioning for Admin */}
-        {role === 'admin' && (
+        {role === 'admin' && currentUser && (
           <div className="bg-white border border-gov-border rounded-[4px] shadow-xs p-6 animate-fade-up">
             <div className="border-b border-gov-border pb-3 mb-4">
               <h2 className="text-md font-extrabold text-primary-blue flex items-center gap-2">
@@ -370,7 +503,8 @@ console.log("Records loaded:", data);
                 Provision Employee Login Access
               </h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                Set roles and passwords for registered employees to enable portal logins.
+                Directly create or update a login for a known employee, bypassing self-registration.
+                For employees who registered themselves, use the Pending Registrations panel above instead.
               </p>
             </div>
             <form onSubmit={handleProvisionSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
@@ -384,7 +518,7 @@ console.log("Records loaded:", data);
                   required
                   placeholder="e.g. EMP002"
                   value={provisionData.employeeId}
-                  onChange={(e) => setProvisionData({ ...provisionData, employeeId: e.target.value })}
+                  onChange={(e) => setProvisionData({ ...provisionData, employeeId: e.target.value.toUpperCase() })}
                   className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue transition-all"
                 />
               </div>
@@ -432,13 +566,30 @@ console.log("Records loaded:", data);
         {/* Section: Form */}
         {role === 'user' && (
           <div ref={formRef} className="w-full scroll-mt-28">
-            <TrainingForm
-              formData={formData}
-              onChange={handleFormChange}
-              onReset={handleFormReset}
-              onSubmit={handleFormSubmit}
-              loading={loading}
-            />
+            {currentUser ? (
+              <TrainingForm
+                formData={formData}
+                onChange={handleFormChange}
+                onReset={handleFormReset}
+                onSubmit={handleFormSubmit}
+                loading={loading}
+                lockIdentity={currentUser.role !== 'ADMIN'}
+              />
+            ) : (
+              <div className="bg-white border border-dashed border-gov-border rounded-[4px] p-8 text-center">
+                <Lock className="w-6 h-6 text-primary-blue/60 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-primary-blue">Login required to submit a training record</p>
+                <p className="text-xs text-text-secondary mt-1 mb-4">
+                  You can browse records below, but submitting requires an authenticated session.
+                </p>
+                <button
+                  onClick={() => setLoginModalOpen(true)}
+                  className="bg-primary-blue hover:bg-[#1C355E] text-white font-bold text-xs uppercase tracking-wider py-2.5 px-6 rounded-[4px] transition-colors cursor-pointer"
+                >
+                  Login
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -506,7 +657,7 @@ console.log("Records loaded:", data);
                     required
                     placeholder="Enter Employee ID (e.g. EMP001)"
                     value={loginData.employeeId}
-                    onChange={(e) => setLoginData({ ...loginData, employeeId: e.target.value })}
+                    onChange={(e) => setLoginData({ ...loginData, employeeId: e.target.value.toUpperCase() })}
                     className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
                   />
                 </div>
@@ -543,7 +694,185 @@ console.log("Records loaded:", data);
                     Authenticate Session
                   </button>
                 </div>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginModalOpen(false);
+                      setLoginError('');
+                      setRegisterModalOpen(true);
+                    }}
+                    className="text-xs font-semibold text-primary-blue hover:underline cursor-pointer"
+                  >
+                    New employee? Register here
+                  </button>
+                </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Registration Modal */}
+      <AnimatePresence>
+        {registerModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-gov-border rounded-[4px] shadow-lg w-full max-w-md overflow-hidden"
+            >
+              <div className="bg-primary-blue text-white p-5 flex items-center justify-between border-b border-[#1C355E]">
+                <div className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-accent-orange" />
+                  <span className="text-sm font-extrabold uppercase tracking-wider">
+                    Employee Self-Registration
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setRegisterModalOpen(false);
+                    setRegisterError('');
+                    setRegisterSuccess('');
+                  }}
+                  className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {registerSuccess ? (
+                <div className="p-6 space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-[3px] text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>{registerSuccess}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegisterModalOpen(false);
+                      setRegisterSuccess('');
+                      setLoginModalOpen(true);
+                    }}
+                    className="w-full bg-primary-blue hover:bg-[#1C355E] text-white font-bold text-xs uppercase tracking-wider py-2.5 rounded-[4px] transition-colors cursor-pointer"
+                  >
+                    Back to Login
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleRegisterSubmit} className="p-6 space-y-4">
+                  <p className="text-xs text-text-secondary -mt-1">
+                    Your account will be created as pending — an administrator must approve it
+                    and assign a role before you can log in.
+                  </p>
+
+                  {registerError && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-[3px] text-xs font-semibold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span>{registerError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="regEmployeeId" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                      Employee ID
+                    </label>
+                    <input
+                      type="text"
+                      id="regEmployeeId"
+                      required
+                      placeholder="e.g. TE-030316"
+                      value={registerData.employeeId}
+                      onChange={(e) => setRegisterData({ ...registerData, employeeId: e.target.value.toUpperCase() })}
+                      className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="regEmployeeName" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      id="regEmployeeName"
+                      required
+                      placeholder="e.g. Bikas Mallik"
+                      value={registerData.employeeName}
+                      onChange={(e) => setRegisterData({ ...registerData, employeeName: e.target.value })}
+                      className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="regDepartment" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                      Department
+                    </label>
+                    <select
+                      id="regDepartment"
+                      required
+                      value={registerData.department}
+                      onChange={(e) => setRegisterData({ ...registerData, department: e.target.value })}
+                      className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+                    >
+                      <option value="">Select Department</option>
+                      {DEPARTMENTS.map((dep) => (
+                        <option key={dep} value={dep}>{dep}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="regPassword" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showRegisterPassword ? "text" : "password"}
+                        id="regPassword"
+                        required
+                        minLength={8}
+                        placeholder="At least 8 characters"
+                        value={registerData.password}
+                        onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                        className="w-full border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm pl-3 pr-10 py-2.5 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-secondary hover:text-primary-blue cursor-pointer"
+                      >
+                        {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={registerLoading}
+                      className="w-full bg-primary-blue hover:bg-[#1C355E] disabled:opacity-50 text-white font-extrabold text-sm uppercase tracking-wider py-3 rounded-[4px] transition-colors cursor-pointer shadow-sm active:scale-98"
+                    >
+                      {registerLoading ? "Submitting..." : "Submit Registration"}
+                    </button>
+                  </div>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegisterModalOpen(false);
+                        setRegisterError('');
+                        setLoginModalOpen(true);
+                      }}
+                      className="text-xs font-semibold text-primary-blue hover:underline cursor-pointer"
+                    >
+                      Already have an approved account? Log in
+                    </button>
+                  </div>
+                </form>
+              )}
             </motion.div>
           </div>
         )}

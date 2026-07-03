@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LayoutGrid, Table, Search, Trash2, Award, Calendar, FileText, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { downloadCertificate } from '../services/trainingService';
 
 export default function TrainingCards({ records, onDeleteRecord, role = 'user', currentUserEmployeeId = '' }) {
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
@@ -25,7 +26,7 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
       rec.employee?.employeeId || rec.employeeId || "";
 
     const trainingModule =
-      rec.module?.moduleName || rec.trainingModule || "";
+      rec.moduleName || "";
 
     const matchesSearch =
       employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -44,28 +45,33 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
 
     return matchesSearch && matchesStatus && matchesRoleFilter;
   });
+  // Backend Status enum is IN_PROGRESS / COMPLETED — map to friendly labels here.
+  const statusLabel = (status) => {
+    switch (status) {
+      case 'IN_PROGRESS':
+        return 'In Progress';
+      case 'COMPLETED':
+        return 'Completed';
+      default:
+        return status || 'Unknown';
+    }
+  };
+
   // Helper to get status colors
   const getStatusBadgeClass = (status) => {
     switch (status) {
-      case 'Completed':
+      case 'COMPLETED':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'In Progress':
+      case 'IN_PROGRESS':
         return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Under Review':
-        return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 'Expired':
-        return 'bg-rose-50 text-rose-700 border-rose-200';
       default:
         return 'bg-slate-50 text-slate-700 border-slate-200';
     }
   };
 
   // Helper to determine left border color based on status
-  const getCardBorderColor = (status, idx) => {
-    // Mirror the screenshots where some cards have blue, some have orange
-    if (status === 'In Progress') return 'border-l-[4px] border-l-accent-orange';
-    if (status === 'Expired') return 'border-l-[4px] border-l-rose-500';
-    // Otherwise alternate or default to primary blue
+  const getCardBorderColor = (status) => {
+    if (status === 'IN_PROGRESS') return 'border-l-[4px] border-l-accent-orange';
     return 'border-l-[4px] border-l-primary-blue';
   };
 
@@ -149,10 +155,8 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
             className="w-full px-3 py-2 border border-gov-border rounded-[4px] text-sm focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue bg-gov-bg/10 focus:bg-white transition-all"
           >
             <option value="All">All Statuses</option>
-            <option value="Completed">Completed</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Under Review">Under Review</option>
-            <option value="Expired">Expired</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="IN_PROGRESS">In Progress</option>
           </select>
         </div>
       </div>
@@ -181,7 +185,7 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.2 }}
                       key={rec.recordId}
-                      className={`bg-white border border-gov-border rounded-[4px] shadow-xs hover:shadow-md transition-shadow flex flex-col relative overflow-hidden ${getCardBorderColor(rec.status, idx)}`}
+                      className={`bg-white border border-gov-border rounded-[4px] shadow-xs hover:shadow-md transition-shadow flex flex-col relative overflow-hidden ${getCardBorderColor(rec.status)}`}
                     >
                       {/* Index & Status */}
                       <div className="px-5 pt-5 pb-2 flex justify-between items-start">
@@ -189,14 +193,14 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
                           {formattedIdx}
                         </span>
                         <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-[3px] border ${getStatusBadgeClass(rec.status)}`}>
-                          {rec.status}
+                          {statusLabel(rec.status)}
                         </span>
                       </div>
 
                       {/* Content Body */}
                       <div className="px-5 pb-5 flex-grow flex flex-col">
                         <h3 className="text-md font-extrabold text-primary-blue leading-snug mb-3">
-                          {rec.module?.moduleName || rec.trainingModule}
+                          {rec.moduleName}
                         </h3>
                         
                         {/* Detailed Stats */}
@@ -221,9 +225,18 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
                               <FileText className="w-3.5 h-3.5 text-text-secondary/70" />
                               <div>
                                 <span className="text-[10px] text-text-secondary uppercase block">Attachment</span>
-                                <span className="font-semibold text-primary-blue block max-w-[125px] truncate" title={rec.certificateFile || 'None'}>
-                                  {rec.certificateFile || 'No file'}
-                                </span>
+                                {rec.fileName ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadCertificate(rec.recordId, rec.fileName)}
+                                    className="font-semibold text-primary-blue hover:underline block max-w-[125px] truncate text-left cursor-pointer"
+                                    title={`View ${rec.fileName}`}
+                                  >
+                                    {rec.fileName}
+                                  </button>
+                                ) : (
+                                  <span className="font-semibold text-text-secondary block">No file</span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -309,7 +322,7 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
                       {/* Training Details */}
                       <td className="py-4 px-4 border-r border-gov-border">
                        <div className="font-bold text-text-primary text-sm">
-  {rec.module?.moduleName || rec.trainingModule}
+  {rec.moduleName}
 </div>
                         <div className="text-[10px] text-text-secondary uppercase mt-1">
                           Type: <span className="font-bold">
@@ -329,20 +342,25 @@ export default function TrainingCards({ records, onDeleteRecord, role = 'user', 
                         <div className="text-[10px] text-text-secondary mt-1">
                           Issued: <span className="font-medium">{rec.issueDate || 'N/A'}</span>
                         </div>
-                        {rec.certificateFile && (
-                          <div className="flex items-center gap-1.5 mt-2 bg-gov-bg/40 border border-gov-border/40 py-1 px-2 rounded-[3px] max-w-[190px]">
+                        {rec.fileName && (
+                          <button
+                            type="button"
+                            onClick={() => downloadCertificate(rec.recordId, rec.fileName)}
+                            className="flex items-center gap-1.5 mt-2 bg-gov-bg/40 hover:bg-gov-bg/70 border border-gov-border/40 py-1 px-2 rounded-[3px] max-w-[190px] cursor-pointer text-left"
+                            title={`View ${rec.fileName}`}
+                          >
                             <FileText className="w-3.5 h-3.5 text-primary-blue flex-shrink-0" />
-                            <span className="font-semibold text-text-primary text-[10px] truncate" title={rec.certificateFile}>
-                              {rec.certificateFile}
+                            <span className="font-semibold text-text-primary text-[10px] truncate">
+                              {rec.fileName}
                             </span>
-                          </div>
+                          </button>
                         )}
                       </td>
 
                       {/* Status */}
                       <td className="py-4 px-4 text-center border-r border-gov-border">
                         <span className={`inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-[3px] border ${getStatusBadgeClass(rec.status)}`}>
-                          {rec.status}
+                          {statusLabel(rec.status)}
                         </span>
                       </td>
 
