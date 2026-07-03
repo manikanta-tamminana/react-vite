@@ -59,6 +59,13 @@ export default function Home() {
   const recordsRef = useRef(null);
 
   // Initialize records from localStorage or JSON file
+  
+  function triggerNotification(type, message) {
+    setNotification({ type, message });
+    setTimeout(() => {
+      setNotification(null);
+    }, 4500);
+  };
   useEffect(() => {
     const loadRecords = async () => {
       if (!currentUser) {
@@ -72,25 +79,29 @@ export default function Home() {
         } else {
           data = await fetchEmployeeRecords(currentUser.employeeId);
         }
-        setRecords(data);
+        console.log("Before setRecords");
+setRecords(data);
+console.log("After setRecords");
+console.log("Records loaded:", data);
       } catch (error) {
-        triggerNotification(
-          "error",
-          "Unable to load training records"
-        );
-      }
+  console.error("===== LOAD RECORDS ERROR =====");
+  console.error(error);
+  console.error(error.response);
+  console.error(error.response?.status);
+  console.error(error.response?.data);
+  console.error(error.message);
+
+  triggerNotification(
+    "error",
+    "Unable to load training records"
+  );
+}
     };
 
     loadRecords();
   }, [currentUser, role]);
 
 
-  const triggerNotification = (type, message) => {
-    setNotification({ type, message });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4500);
-  };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -171,7 +182,7 @@ export default function Home() {
       triggerNotification('success', `Welcome back, ${data.employeeName}!`);
     } catch (err) {
       // Fallback for offline preview/mock mode
-      if (loginData.employeeId === 'EMP001' && loginData.password === 'password') {
+      if (loginData.employeeId === 'EMP001' && loginData.password === 'password123') {
         const mockAdmin = {
           employeeId: 'EMP001',
           employeeName: 'Mock Test Admin',

@@ -26,8 +26,10 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
   ];
 
   const types = ['Induction', 'Refresher', 'Specialization', 'Technical'];
-  const statuses = ['In Progress', 'Completed', 'Under Review', 'Expired'];
-
+  const statuses = [
+  { label: "In Progress", value: "IN_PROGRESS" },
+  { label: "Completed", value: "COMPLETED" }
+];
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit();
@@ -147,18 +149,23 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
               Status <span className="text-red-500">*</span>
             </label>
             <select
-              id="status"
-              name="status"
-              value={formData.status}
-              onChange={onChange}
-              required
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
-            >
-              <option value="">Select Status</option>
-              {statuses.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
+  id="status"
+  name="status"
+  value={formData.status}
+  onChange={onChange}
+  required
+>
+  <option value="">Select Status</option>
+
+  {statuses.map((status) => (
+    <option
+      key={status.value}
+      value={status.value}
+    >
+      {status.label}
+    </option>
+  ))}
+</select>
           </div>
 
           {/* Issue Date */}
@@ -209,7 +216,7 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
                     type="file"
                     id="certificateFile"
                     name="certificateFile"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    accept=".pdf,.jpg,.jpeg,.png"
                     onChange={(e) => {
                       const file = e.target.files[0];
                       if (file) {
