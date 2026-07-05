@@ -80,6 +80,39 @@ export const deleteTrainingRecord = async (recordId) => {
   }
 };
 
+// Completes a previously IN_PROGRESS record: uploads the certificate (now
+// mandatory) and flips status to COMPLETED, ready for admin review.
+export const completeTrainingRecord = async (recordId, { certificateNumber, issueDate, remarks, certificateFile }) => {
+  const payload = {
+    certificateNumber,
+    issueDate: issueDate && issueDate.trim() !== '' ? issueDate : null,
+    remarks: remarks && remarks.trim() !== '' ? remarks : null,
+  };
+
+  const body = new FormData();
+  body.append("data", new Blob([JSON.stringify(payload)], { type: "application/json" }));
+  body.append("certificateFile", certificateFile);
+
+  try {
+    const res = await api.patch(`/certificates/${recordId}/complete`, body, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  } catch (err) {
+    throw toError(err, "Failed to complete training record");
+  }
+};
+
+// Admin's approve/invalidate decision on a COMPLETED record.
+export const decideApproval = async (recordId, decision, remarks) => {
+  try {
+    const res = await api.post(`/certificates/${recordId}/approve`, { decision, remarks });
+    return res.data;
+  } catch (err) {
+    throw toError(err, "Failed to record approval decision");
+  }
+};
+
 // Downloads/opens a certificate. This endpoint is auth-protected, so a plain
 // <a href> won't work (the browser wouldn't attach the Authorization header).
 // Instead we fetch it as a blob through axios (which does attach the header

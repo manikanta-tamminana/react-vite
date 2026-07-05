@@ -18,7 +18,9 @@ import {
   provisionUser,
   getAuthUser,
   clearAuthData,
-  deleteTrainingRecord
+  deleteTrainingRecord,
+  completeTrainingRecord,
+  decideApproval
 } from "../services/trainingService";
 
 import { AlertCircle, CheckCircle2, User, Shield, Lock, Eye, EyeOff, X } from "lucide-react";
@@ -27,7 +29,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 const emptyForm = {
   employeeName: '',
   employeeId: '',
-  department: '',
   trainingModule: '',
   trainingType: '',
   status: '',
@@ -38,7 +39,8 @@ const emptyForm = {
   remarks: ''
 };
 
-// Kept in sync with TrainingForm.jsx's department list.
+// Used by the registration form only — training record submission no longer
+// collects department (it's sourced from the employee's own registration).
 const DEPARTMENTS = [
   'Finance Department',
   'Agriculture',
@@ -298,9 +300,9 @@ export default function Home() {
   };
 
   const handleDeleteRecord = async (recordId) => {
-    console.log("Received ID for deletion:", recordId);
-
-    // Optimistic UI Update (immediate removal from list, zero lag!)
+    // Owner-only now — admins review records via approve/invalidate instead
+    // of deleting (backend also enforces this; the button is simply hidden
+    // for admins in TrainingCards).
     const updated = records.filter(
       rec => rec.recordId !== recordId
     );
@@ -317,6 +319,38 @@ export default function Home() {
         "error",
         "Failed to delete training record: " + error.message
       );
+    }
+  };
+
+  // Admin approves or invalidates a COMPLETED record.
+  const handleApprovalDecision = async (recordId, decision, remarks) => {
+    try {
+      await decideApproval(recordId, decision, remarks);
+      setRecords((prev) =>
+        prev.map((rec) =>
+          rec.recordId === recordId
+            ? { ...rec, approvalStatus: decision, adminRemarks: decision === 'INVALID' ? remarks : null }
+            : rec
+        )
+      );
+      triggerNotification('success', `Record marked ${decision === 'APPROVED' ? 'Approved' : 'Invalid'}.`);
+    } catch (error) {
+      triggerNotification('error', error.message || 'Failed to update approval status.');
+    }
+  };
+
+  // Employee completes a previously IN_PROGRESS record: uploads the
+  // certificate (now mandatory) and the record moves to COMPLETED, awaiting
+  // admin review.
+  const handleCompleteRecord = async (recordId, completionData) => {
+    try {
+      const updated = await completeTrainingRecord(recordId, completionData);
+      setRecords((prev) =>
+        prev.map((rec) => (rec.recordId === recordId ? updated : rec))
+      );
+      triggerNotification('success', 'Certificate uploaded — record marked Completed and sent for approval.');
+    } catch (error) {
+      triggerNotification('error', error.message || 'Failed to complete training record.');
     }
   };
 
@@ -598,6 +632,8 @@ export default function Home() {
           <TrainingCards
             records={records}
             onDeleteRecord={handleDeleteRecord}
+            onApprovalDecision={handleApprovalDecision}
+            onCompleteRecord={handleCompleteRecord}
             role={role}
             currentUserEmployeeId={currentUser ? (currentUser.role === 'ADMIN' ? '' : currentUser.employeeId) : formData.employeeId}
           />

@@ -2,18 +2,6 @@ import React from 'react';
 import { Send, RotateCcw, Upload, FileText, X } from 'lucide-react';
 
 export default function TrainingForm({ formData, onChange, onSubmit, onReset, loading, lockIdentity }) {
-  const departments = [
-    'Finance Department',
-    'Agriculture',
-    'Agriculture (Horticulture)',
-    'Information Technology',
-    'PWD (Public Works Department)',
-    'Health & Family Welfare',
-    'School Education',
-    'Treasury Department',
-    'Panchayats'
-  ];
-
   const modules = [
     'Cyber Security Awareness',
     'Data Privacy Compliance',
@@ -103,26 +91,6 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
             )}
           </div>
 
-          {/* Department */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="department" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
-              Department <span className="text-red-500">*</span>
-            </label>
-            <select
-              id="department"
-              name="department"
-              value={formData.department}
-              onChange={onChange}
-              required
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
-            >
-              <option value="">Select Department</option>
-              {departments.map((dep) => (
-                <option key={dep} value={dep}>{dep}</option>
-              ))}
-            </select>
-          </div>
-
           {/* Training Module */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="trainingModule" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
@@ -184,25 +152,31 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
           </div>
 
           {/* Issue Date */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="issueDate" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
-              Issue Date <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              id="issueDate"
-              name="issueDate"
-              value={formData.issueDate}
-              onChange={onChange}
-              required
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
-            />
-          </div>
+          {formData.status === 'COMPLETED' && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="issueDate" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                Issue Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                id="issueDate"
+                name="issueDate"
+                value={formData.issueDate}
+                onChange={onChange}
+                required
+                className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+              />
+            </div>
+          )}
 
           {/* Certificate File Upload */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold text-primary-blue uppercase tracking-wider">
-              Certificate Document <span className="text-red-500">*</span>
+              Certificate Document {formData.status === 'COMPLETED' ? (
+                <span className="text-red-500">*</span>
+              ) : (
+                <span className="text-text-secondary normal-case font-normal">(optional — can upload later)</span>
+              )}
             </label>
             <div className="relative">
               {formData.certificateFile ? (
@@ -240,7 +214,7 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
                       }
                     }}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    required
+                    required={formData.status === 'COMPLETED'}
                   />
                   <div className="flex items-center gap-2 text-text-secondary group-hover:text-primary-blue font-bold text-xs uppercase tracking-wider transition-colors py-0.5">
                     <Upload className="w-4 h-4 text-accent-orange" />
@@ -269,21 +243,23 @@ export default function TrainingForm({ formData, onChange, onSubmit, onReset, lo
           </div>
 
           {/* Certificate Number */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="certificateNumber" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
-              Certificate Number <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              id="certificateNumber"
-              name="certificateNumber"
-              value={formData.certificateNumber}
-              onChange={onChange}
-              required
-              placeholder="e.g. NIC-CS-2026-0891"
-              className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
-            />
-          </div>
+          {formData.status === 'COMPLETED' && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="certificateNumber" className="text-xs font-bold text-primary-blue uppercase tracking-wider">
+                Certificate Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="certificateNumber"
+                name="certificateNumber"
+                value={formData.certificateNumber}
+                onChange={onChange}
+                required
+                placeholder="e.g. NIC-CS-2026-0891"
+                className="border border-gov-border rounded-[4px] bg-gov-bg/30 text-text-primary text-sm px-3 py-2 focus:bg-white focus:outline-none focus:border-primary-blue focus:ring-1 focus:ring-primary-blue transition-all"
+              />
+            </div>
+          )}
         </div>
 
         {/* Remarks */}
